@@ -1,0 +1,22 @@
+{
+  "curly": true,
+  "eqeqeq": true,
+  "forin": true,
+  "immed": true,
+  "newcap": true,
+  "noarg": true,
+  "noempty": true,
+  "undef": true,
+  "unused": true,
+  "indent": 2,
+  "maxdepth": 4,
+  "maxparams": 4,
+  "maxstatements": 20,
+  "maxlen": 160,
+  "esversion": 6,
+  "laxbreak": true,
+  "node": true,
+  "mocha": true,
+  "globalstrict": false,
+  "white": false
+}
