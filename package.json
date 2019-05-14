@@ -18,9 +18,6 @@
   "engine": [
     "node ^6.9.1"
   ],
-  "bin": {
-    "mb-loader": "mb-loader.js"
-  },
   "homepage": "https://github.com/csllc/mb-loader#readme",
   "dependencies": {
     "@csllc/cs-modbus": "^2.1.1"
