@@ -139,7 +139,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
   connectToTarget() {
     let me = this;
 
-    return me.command( BL_OP_ENQUIRE, null, { timeout: 100, maxRetries: 10 })
+    return me.command( BL_OP_ENQUIRE, null, { timeout: 100, maxRetries: 300 })
     .then( function( response ) {
       
 
