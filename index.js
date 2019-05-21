@@ -67,6 +67,8 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     let me = this;
     
+    // expose this class definition to upper level application
+    me.BootloaderTarget = require('./lib/BootloaderTarget.js');
 
     // Stores data parsed from the hex file
     me.flashBlocks = [];
@@ -100,6 +102,10 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     let me = this;
 
+    if( data === null ) {
+      data = [];
+    }
+
     if( !Array.isArray( data ) ) {
       options = data;
       data = [];
@@ -112,8 +118,11 @@ module.exports = class ModbusBootloader extends EventEmitter {
       options.onResponse = function( response ) {
         resolve( response.values );
       };
-      options.onError = function( err ) {
-        reject( err );
+      options.onComplete = function( err ) {
+        //console.log( this );
+        if( err && !this.shouldRetry() ) {
+          reject( err );
+        }
       };
 
       me.master.command( op, Buffer.from(data), options );
@@ -130,7 +139,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
   connectToTarget() {
     let me = this;
 
-    return me.command( BL_OP_ENQUIRE, null, { timeout: 100, maxRetries: 300 })
+    return me.command( BL_OP_ENQUIRE, null, { timeout: 100, maxRetries: 10 })
     .then( function( response ) {
       
 

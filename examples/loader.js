@@ -32,7 +32,7 @@ var Modbus = require('@csllc/cs-modbus');
 // the instance of the modbus master
 var master;
 
-const BootloaderTarget = require('../lib/BootloaderTarget');
+
 const Bootloader = require('..');
 
 const APP_NAME = path.basename(__filename, '.js');
@@ -92,12 +92,7 @@ let options = {
   autoOpen: false,
 };
 
-// Set up the bootloader config accordingly
-let target = new BootloaderTarget.DefaultPic18Target();
-let config = {
-  target: target,
-  space: 0
-};
+
 
 
 // Check for the list ports option
@@ -169,6 +164,13 @@ function createMaster( ) {
 
     // Start communicating with the bootloader
     const bl = new Bootloader( master );
+
+    // Set up the bootloader config accordingly
+    let target = new bl.BootloaderTarget.DefaultPic18Target();
+    let config = {
+      target: target,
+      space: 0
+    };
 
     // If verbose, catch events from the bootloader and display them
     if( args.v ) {
