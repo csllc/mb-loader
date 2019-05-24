@@ -222,9 +222,9 @@ module.exports = class ModbusBootloader extends EventEmitter {
             // have been thrown and we wouldn't be here.)
 
             // send erase command
-            me.emit('status', 'Erasing');
+            me.emit('status', 'Erasing' );
 
-            timer = process.hrtime()
+            timer = process.hrtime();
 
             let action = me.command( BL_OP_ERASE, {timeout: me.space.eraseTimeout } );
 
@@ -352,7 +352,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
     let file = new IntelHex();
 
     // load file into blocks according to desired block size
-    return file.loadFile( filename, me.space.hexBlock )
+    return file.loadFile( filename, me.blockSize )
     .then( function( blocks ) {
 
       if( 'function' === typeof( me.space.loadFilter ) ) {
@@ -401,7 +401,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
         }
       }
       else {
-        me.emit('status', 'Ignoring out-of-range data at ' + start.toString(16));
+        //me.emit('status', 'Ignoring out-of-range data at ' + start.toString(16));
       }
     });
 
