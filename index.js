@@ -148,7 +148,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
       me.blVersion = response[1] + '.' + response[2];
 
       // check for compatible bootloader version
-      if( response[1] !== 2 ) {
+      if( response[1] !== 3 && response[1] !== 2 ) {
          throw new Error( 'Unsupported bootloader version (' + me.blVersion + ')');
       }
 
