@@ -352,7 +352,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
     let file = new IntelHex();
 
     // load file into blocks according to desired block size
-    return file.loadFile( filename, me.blockSize )
+    return file.loadFile( filename, me.space.hexBlock )
     .then( function( blocks ) {
 
       if( 'function' === typeof( me.space.loadFilter ) ) {
