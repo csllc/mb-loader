@@ -412,7 +412,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
       let start = index * space.hexBlock / space.addressing;
       let end = ((index+1) * space.hexBlock / space.addressing) - space.addressing;
       
-      console.log( 'block', index, start.toString(16), end.toString(16), block.length, space.blockIsEmpty( block ) );
+      //console.log( 'block', index, start.toString(16), end.toString(16), block.length, space.blockIsEmpty( block ) );
 
       if( start >= me.appStart && end <= me.appEnd  ) {
         if( !space.blockIsEmpty( block )) {
