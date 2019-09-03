@@ -20,6 +20,6 @@
   ],
   "homepage": "https://github.com/csllc/mb-loader#readme",
   "dependencies": {
-    "@csllc/cs-modbus": "^2.1.1"
+    "@csllc/cs-modbus": "^2.2.0"
   }
 }

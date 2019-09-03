@@ -84,6 +84,9 @@ module.exports = class ModbusBootloader extends EventEmitter {
     me.blockSize = 0;
 
     me.inPassThru = false;
+
+    // the bootloader version of the target device
+    me.targetVersion = [0,0];
   }
     
   /**
@@ -139,28 +142,38 @@ module.exports = class ModbusBootloader extends EventEmitter {
   connectToTarget() {
     let me = this;
 
-    return me.command( BL_OP_ENQUIRE, null, { timeout: 100, maxRetries: 300 })
+    return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enqTimeout, maxRetries: 300 })
     .then( function( response ) {
-      
 
-      // Response consists of
-      // product code, versionMajor, versionMinor, numberOfSpaces
-      me.blVersion = response[1] + '.' + response[2];
+      if( response.length >=4 ) {
+        // Response consists of
+        // product code, versionMajor, versionMinor, numberOfSpaces
+        me.blVersion = response[1] + '.' + response[2];
+        
+        // save version for later use
+        me.targetVersion = [response[1], response[2]];
 
-      // check for compatible bootloader version
-      if( response[1] !== 3 && response[1] !== 2 ) {
-         throw new Error( 'Unsupported bootloader version (' + me.blVersion + ')');
+        // check for compatible bootloader version
+        if( [4,3,2].indexOf( response[1]) === -1 ) {
+           throw new Error( 'Unsupported bootloader version (' + me.blVersion + ')');
+        }
+
+        me.emit('status', 'Product Code: ' + response[0] );
+        me.emit('status',  'Bootloader Version: ' + me.blVersion );
+
+        // check the connected device is compatible with what we are trying to load
+        //let check = me.target.isCompatible( response );
+        let check = true;
+
+        if( true !== check ) {
+          throw new Error( check );
+        }
       }
+      else {
 
-      me.emit('status', 'Product Code: ' + response[0] );
-      me.emit('status',  'Bootloader Version: ' + me.blVersion );
-
-      // check the connected device is compatible with what we are trying to load
-      //let check = me.target.isCompatible( response );
-      let check = true;
-
-      if( true !== check ) {
-        throw new Error( check );
+        // we got an invalid response back. this could be incorrect wiring
+        // (loopback) or some other strange condition.  Try to ignore it
+        return me.connectToTarget();
       }
     });
   }
@@ -203,9 +216,20 @@ module.exports = class ModbusBootloader extends EventEmitter {
         })
         .then( function( response ) {
 
-          me.blockSize = response[0]*256 + response[1];
-          me.appStart = (response[2]*0x1000000 + response[3]*0x10000 + response[4]*0x100 + response[5]);
-          me.appEnd = (response[6]*0x1000000 + response[7]*0x10000 + response[8]*0x100 + response[9]);
+          // version 4 uses a differently formatted message
+          if( me.targetVersion[0] < 4 ) {
+            me.blockSize = response[0]*256 + response[1];
+            me.appStart = (response[2]*0x1000000 + response[3]*0x10000 + response[4]*0x100 + response[5]);
+            me.appEnd = (response[6]*0x1000000 + response[7]*0x10000 + response[8]*0x100 + response[9]);
+          }
+          else {
+            me.blockSize = response[0]*256 + response[1];
+            let startBlock = response[2]*0x100 + response[3];
+            let endBlock = response[4]*0x100 + response[5];
+            
+            me.appStart = startBlock * me.blockSize;
+            me.appEnd = endBlock * me.blockSize;           
+          }
 
           me.emit('status', 'Block Size: ' +  me.blockSize );
           me.emit('status', 'App Start: ' + me.appStart.toString(16)  );
@@ -262,7 +286,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
           me.emit('status', 'Validating..');
 
-          timer = process.hrtime()
+          timer = process.hrtime();
           
           // End of transmission; request checksum
           let action = me.command( BL_OP_VERIFY, { timeout: me.space.verifyTimeout } );
@@ -300,9 +324,6 @@ module.exports = class ModbusBootloader extends EventEmitter {
         })
         .catch( function(err) {
           reject( err );
-        })
-        .catch( function(err) {
-          reject( err );
         });
 
     });
@@ -326,7 +347,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     let me = this;
 
-    return me.command( BL_OP_DATA, me.space.sendFilter( index, block ), {timeout: me.space.dataTimeout,  maxRetries: 3 } )
+    return me.command( BL_OP_DATA, me.space.sendFilter( index, block ), {timeout: me.space.dataTimeout,  maxRetries: 0 } )
     .then( function( response ) {
       if( response[0] !== BL_OP_ACK ) {
         throw new Error('Unexpected response while writing data: ' + response[0] );
@@ -366,6 +387,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
         throw new Error( 'Hex file is not compatible with this device');
       }
     });
+
   }
 
   /**
@@ -389,7 +411,8 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
       let start = index * space.hexBlock / space.addressing;
       let end = ((index+1) * space.hexBlock / space.addressing) - space.addressing;
-      //console.log( 'block', index, start.toString(16), end.toString(16));
+      
+      console.log( 'block', index, start.toString(16), end.toString(16), block.length, space.blockIsEmpty( block ) );
 
       if( start >= me.appStart && end <= me.appEnd  ) {
         if( !space.blockIsEmpty( block )) {
