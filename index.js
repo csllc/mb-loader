@@ -87,6 +87,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // the bootloader version of the target device
     me.targetVersion = [0,0];
+
   }
     
   /**
@@ -145,13 +146,21 @@ module.exports = class ModbusBootloader extends EventEmitter {
     return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enqTimeout, maxRetries: 300 })
     .then( function( response ) {
 
-      if( response.length >=4 ) {
+      if( response.length >= 4 ) {
         // Response consists of
-        // product code, versionMajor, versionMinor, numberOfSpaces
+        // product code, versionMajor, versionMinor, numberOfSpaces, max buffer(Msb,LSB)
         me.blVersion = response[1] + '.' + response[2];
         
         // save version for later use
         me.targetVersion = [response[1], response[2]];
+
+        me.numberOfSpaces = response[3];
+        if( response.length > 5 ) {
+          me.maxBuffer = response[4]*256 + response[5];
+        }
+        else {
+          me.maxBuffer = 0;
+        }
 
         // check for compatible bootloader version
         if( [4,3,2].indexOf( response[1]) === -1 ) {
@@ -160,6 +169,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
         me.emit('status', 'Product Code: ' + response[0] );
         me.emit('status',  'Bootloader Version: ' + me.blVersion );
+        me.emit('status',  'Max Buffer: ' + me.maxBuffer );
 
         // check the connected device is compatible with what we are trying to load
         //let check = me.target.isCompatible( response );
@@ -231,12 +241,12 @@ module.exports = class ModbusBootloader extends EventEmitter {
             me.appEnd = endBlock * me.blockSize;           
           }
 
-          me.emit('status', 'Block Size: ' +  me.blockSize );
+          me.emit('status', 'Min Block Size: ' +  me.blockSize );
           me.emit('status', 'App Start: ' + me.appStart.toString(16)  );
           me.emit('status', 'App End: ' + me.appEnd.toString(16)  );
 
           // Read and check the HEX file
-          me.emit('status', 'Loading File');
+          me.emit('status', 'Loading File: ' + file );
 
           return me.importFile( file );
         })
@@ -253,7 +263,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
             let action = me.command( BL_OP_ERASE, {timeout: me.space.eraseTimeout } );
 
             // determine the CRC of the entire application space
-            computedCrc = me.space.checksum( me.appStart, me.appEnd, me.blockSize, me.flashBlocks );
+            computedCrc = me.space.checksum( me.appStart - me.space.dataOffset, me.appEnd - me.space.dataOffset, me.space.hexBlock, me.flashBlocks );
             
             return action;
 
@@ -347,7 +357,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     let me = this;
 
-    return me.command( BL_OP_DATA, me.space.sendFilter( index, block ), {timeout: me.space.dataTimeout,  maxRetries: 0 } )
+    return me.command( BL_OP_DATA, me.space.sendFilter( index, block, me.space.dataOffset ), {timeout: me.space.dataTimeout,  maxRetries: 0 } )
     .then( function( response ) {
       if( response[0] !== BL_OP_ACK ) {
         throw new Error('Unexpected response while writing data: ' + response[0] );
@@ -409,11 +419,9 @@ module.exports = class ModbusBootloader extends EventEmitter {
     // all the promises in the array.
     me.flashBlocks.forEach( function( block, index ) {
 
-      let start = index * space.hexBlock / space.addressing;
-      let end = ((index+1) * space.hexBlock / space.addressing) - space.addressing;
+      let start = index * space.hexBlock / space.addressing + space.dataOffset;
+      let end = ((index+1) * space.hexBlock / space.addressing) - space.addressing + space.dataOffset;
       
-      //console.log( 'block', index, start.toString(16), end.toString(16), block.length, space.blockIsEmpty( block ) );
-
       if( start >= me.appStart && end <= me.appEnd  ) {
         if( !space.blockIsEmpty( block )) {
           me.totalBlocks++; 
