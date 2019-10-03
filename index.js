@@ -357,7 +357,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     let me = this;
 
-    return me.command( BL_OP_DATA, me.space.sendFilter( index, block, me.space.dataOffset ), {timeout: me.space.dataTimeout,  maxRetries: 0 } )
+    return me.command( BL_OP_DATA, me.space.sendFilter( index, block, me.space.addressing, me.space.dataOffset ), {timeout: me.space.dataTimeout,  maxRetries: 0 } )
     .then( function( response ) {
       if( response[0] !== BL_OP_ACK ) {
         throw new Error('Unexpected response while writing data: ' + response[0] );
