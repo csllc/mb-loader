@@ -117,6 +117,10 @@ module.exports = class ModbusBootloader extends EventEmitter {
     
     options = options || {};
 
+    // the ID of the device we are sending to.  Undefined
+    // means the modbus master will use its default.
+    options.unit = options.unit || me.unit || undefined;
+
     return new Promise( function( resolve, reject ){
 
       options.onResponse = function( response ) {
@@ -143,7 +147,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
   connectToTarget() {
     let me = this;
 
-    return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enqTimeout, maxRetries: 300 })
+    return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enquireTimeout, maxRetries: 300 })
     .then( function( response ) {
 
       if( response.length >= 4 ) {
@@ -206,6 +210,9 @@ module.exports = class ModbusBootloader extends EventEmitter {
     me.target = config.target;
     me.space = config.target.spaces[ config.space ];
     me.inPassThru = false;
+
+    // save, if set in config
+    me.unit = config.unit;
 
     return new Promise( function( resolve, reject ) {
         
