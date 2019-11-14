@@ -20,7 +20,7 @@
   ],
   "homepage": "https://github.com/csllc/mb-loader#readme",
   "dependencies": {
-    "@csllc/cs-modbus": "^2.2.0",
+    "@csllc/cs-modbus": "^2.3.0",
     "chalk": "^2.4.2",
     "minimist": "^1.2.0",
     "serialport": "^7.1.5"

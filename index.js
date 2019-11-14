@@ -150,7 +150,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
     return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enquireTimeout, maxRetries: 300 })
     .then( function( response ) {
 
-      if( response.length >= 4 ) {
+      if( response.length >= 4 && response[0] === BL_OP_ENQUIRE ) {
         // Response consists of
         // product code, versionMajor, versionMinor, numberOfSpaces, max buffer(Msb,LSB)
         me.blVersion = response[1] + '.' + response[2];
@@ -233,29 +233,34 @@ module.exports = class ModbusBootloader extends EventEmitter {
         })
         .then( function( response ) {
 
-          // version 4 uses a differently formatted message
-          if( me.targetVersion[0] < 4 ) {
-            me.blockSize = response[0]*256 + response[1];
-            me.appStart = (response[2]*0x1000000 + response[3]*0x10000 + response[4]*0x100 + response[5]);
-            me.appEnd = (response[6]*0x1000000 + response[7]*0x10000 + response[8]*0x100 + response[9]);
+          if( response.length > 5 && response[0] === BL_OP_SELECT ) {
+            // version 4 uses a differently formatted message
+            if( me.targetVersion[0] < 4 ) {
+              me.blockSize = response[0]*256 + response[1];
+              me.appStart = (response[2]*0x1000000 + response[3]*0x10000 + response[4]*0x100 + response[5]);
+              me.appEnd = (response[6]*0x1000000 + response[7]*0x10000 + response[8]*0x100 + response[9]);
+            }
+            else {
+              me.blockSize = response[0]*256 + response[1];
+              let startBlock = response[2]*0x100 + response[3];
+              let endBlock = response[4]*0x100 + response[5];
+              
+              me.appStart = startBlock * me.blockSize;
+              me.appEnd = endBlock * me.blockSize;           
+            }
+
+            me.emit('status', 'Min Block Size: ' +  me.blockSize );
+            me.emit('status', 'App Start: ' + me.appStart.toString(16)  );
+            me.emit('status', 'App End: ' + me.appEnd.toString(16)  );
+
+            // Read and check the HEX file
+            me.emit('status', 'Loading File: ' + file );
+
+            return me.importFile( file );
           }
           else {
-            me.blockSize = response[0]*256 + response[1];
-            let startBlock = response[2]*0x100 + response[3];
-            let endBlock = response[4]*0x100 + response[5];
-            
-            me.appStart = startBlock * me.blockSize;
-            me.appEnd = endBlock * me.blockSize;           
+            throw( new Error( 'Invalid response to Select'));
           }
-
-          me.emit('status', 'Min Block Size: ' +  me.blockSize );
-          me.emit('status', 'App Start: ' + me.appStart.toString(16)  );
-          me.emit('status', 'App End: ' + me.appEnd.toString(16)  );
-
-          // Read and check the HEX file
-          me.emit('status', 'Loading File: ' + file );
-
-          return me.importFile( file );
         })
         .then( function() {
 
