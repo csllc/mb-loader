@@ -150,7 +150,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
     return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enquireTimeout, maxRetries: 300 })
     .then( function( response ) {
 
-      if( response.length >= 4 && response[0] === BL_OP_ENQUIRE ) {
+      if( response.length >= 4 ) {
         // Response consists of
         // product code, versionMajor, versionMinor, numberOfSpaces, max buffer(Msb,LSB)
         me.blVersion = response[1] + '.' + response[2];
@@ -233,7 +233,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
         })
         .then( function( response ) {
 
-          if( response.length > 5 && response[0] === BL_OP_SELECT ) {
+          if( response.length > 5 ) {
             // version 4 uses a differently formatted message
             if( me.targetVersion[0] < 4 ) {
               me.blockSize = response[0]*256 + response[1];
