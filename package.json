@@ -21,8 +21,8 @@
   "homepage": "https://github.com/csllc/mb-loader#readme",
   "dependencies": {
     "@csllc/cs-modbus": "^2.3.0",
-    "chalk": "^2.4.2",
+    "chalk": "^3.0.0",
     "minimist": "^1.2.0",
-    "serialport": "^7.1.5"
+    "serialport": "^8.0.5"
   }
 }

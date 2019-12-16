@@ -110,18 +110,15 @@ let options = {
 // Check for the list ports option
 if( args.l ) {
   // Retrieve a list of all ports detected on the system
-  SerialPort.list(function (err, ports) {
-
-    if( err ) {
-      console.error( err );
-    }
+  SerialPort.list()
+  .then( function( ports ) {
 
     if( ports ) {
       // ports is now an array of port descriptions.
       ports.forEach(function(port) {
 
         // print each port description
-        console.log(port.comName +
+        console.log(port.path +
         ' : ' + port.pnpId + ' : ' + port.manufacturer );
 
       });
@@ -129,6 +126,9 @@ if( args.l ) {
 
     process.exit(0);
 
+  })
+  .catch( function (err ){
+    console.error( err );
   });
 
 }
