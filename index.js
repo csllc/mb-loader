@@ -70,6 +70,9 @@ module.exports = class ModbusBootloader extends EventEmitter {
     // expose this class definition to upper level application
     me.BootloaderTarget = require('./lib/BootloaderTarget.js');
 
+    // expose this class definition to upper level application
+    me.Hex = require('./lib/intelhex.js');
+
     // Stores data parsed from the hex file
     me.flashBlocks = [];
 
@@ -147,7 +150,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
   connectToTarget() {
     let me = this;
 
-    return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enquireTimeout, maxRetries: 300 })
+    return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enquireTimeout, maxRetries: me.space.enquireRetries })
     .then( function( response ) {
 
       if( response.length >= 4 ) {
@@ -198,7 +201,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
    * 
    * Establishes communication, parses the file, loads and verifies it
    *
-   * @param      string   file     The file
+   * @param      string|function   file     The file to be programmed
    * @param      object   options  The options
    * @return     {Promise}  Resolves when operation is complete
    */
@@ -213,6 +216,9 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // save, if set in config
     me.unit = config.unit;
+
+    // default this for backward compatibility
+    me.space.enquireRetries = me.space.enquireRetries || 300;
 
     return new Promise( function( resolve, reject ) {
         
@@ -252,9 +258,6 @@ module.exports = class ModbusBootloader extends EventEmitter {
             me.emit('status', 'Min Block Size: ' +  me.blockSize );
             me.emit('status', 'App Start: ' + me.appStart.toString(16)  );
             me.emit('status', 'App End: ' + me.appEnd.toString(16)  );
-
-            // Read and check the HEX file
-            me.emit('status', 'Loading File: ' + file );
 
             return me.importFile( file );
           }
@@ -388,14 +391,33 @@ module.exports = class ModbusBootloader extends EventEmitter {
    * @param      string  filename  The filename
    * @return     Promise  resolves when the file has been parsed
    */
-  importFile( filename ) {
+  importFile( file ) {
 
     let me = this;
+    let loader;
 
-    let file = new IntelHex();
+    let hex = new IntelHex();
+
+    const { Readable } = require('stream');
+
+    if( file instanceof Readable ) {
+      // Read and check the HEX file
+      me.emit('status', 'Loading File' );
+      loader = hex.loadStream( file, me.space.hexBlock ); 
+    }
+    else if('string' === typeof( file )){
+      
+      me.emit('status', 'Loading File: ' + file );
+      loader = hex.loadFile( file, me.space.hexBlock );
+
+    }
+    else {
+      throw new Error('Dont know how to import File');      
+    }
+
 
     // load file into blocks according to desired block size
-    return file.loadFile( filename, me.space.hexBlock )
+    return loader
     .then( function( blocks ) {
 
       if( 'function' === typeof( me.space.loadFilter ) ) {
