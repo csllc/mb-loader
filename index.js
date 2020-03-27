@@ -91,8 +91,18 @@ module.exports = class ModbusBootloader extends EventEmitter {
     // the bootloader version of the target device
     me.targetVersion = [0,0];
 
+    // a list of all our in-progress modbus transactions (Transaction objects)
+    me.transactions = [];
   }
     
+  removeTransaction( transaction ) {
+
+    let index = this.transactions.indexOf( transaction );
+    if( index > -1 ) {
+      this.transactions.splice( index, 1 );
+    }
+  }
+
   /**
    * Issue a promisified MODBUS command
    *
@@ -127,16 +137,22 @@ module.exports = class ModbusBootloader extends EventEmitter {
     return new Promise( function( resolve, reject ){
 
       options.onResponse = function( response ) {
+        me.removeTransaction( this );
         resolve( response.values );
       };
       options.onComplete = function( err ) {
-        //console.log( this );
+        //console.log('oncomplete', this, this.shouldRetry() );
         if( err && !this.shouldRetry() ) {
+          me.removeTransaction( this );
           reject( err );
         }
       };
+      if( me.aborting ) {
+        me.removeTransaction( this );
+        return reject('Aborted by user');
+      }
+      me.transactions.push( me.master.command( op, Buffer.from(data), options ) );
 
-      me.master.command( op, Buffer.from(data), options );
     });
   }
 
@@ -150,7 +166,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
   connectToTarget() {
     let me = this;
 
-    return me.command( BL_OP_ENQUIRE, null, { timeout: me.space.enquireTimeout, maxRetries: me.space.enquireRetries })
+    return me.command( BL_OP_ENQUIRE, null, { timeout: me.target.target.enquireTimeout, maxRetries: me.target.target.enquireRetries })
     .then( function( response ) {
 
       if( response.length >= 4 ) {
@@ -192,6 +208,14 @@ module.exports = class ModbusBootloader extends EventEmitter {
         // (loopback) or some other strange condition.  Try to ignore it
         return me.connectToTarget();
       }
+    })
+    .catch(function(err){
+      if( err.name === 'ResponseTimeoutError' ){
+        throw new Error('No Response from Device');
+      }
+      else {
+        throw err;
+      }  
     });
   }
  
@@ -213,12 +237,14 @@ module.exports = class ModbusBootloader extends EventEmitter {
     me.target = config.target;
     me.space = config.target.spaces[ config.space ];
     me.inPassThru = false;
+    me.aborting = false;
+    me.transactions = [];
 
     // save, if set in config
     me.unit = config.unit;
 
     // default this for backward compatibility
-    me.space.enquireRetries = me.space.enquireRetries || 300;
+    me.space.enquireRetries = me.space.enquireRetries || 100;
 
     return new Promise( function( resolve, reject ) {
         
@@ -355,6 +381,25 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
   }
 
+  // cancel bootloader
+  abort() {
+    let me = this;
+
+    this.aborting = true;
+
+    for( let i = this.transactions.length-1; i >=0; i-- ) {
+      me.transactions[i].cancel();
+      // signal end of transaction to anyone waiting on it
+      me.transactions[i].handleError( new Error('Aborted'));
+      // me.transactions[i].destroy();
+
+    }
+
+    me.transactions = [];
+    me.emit('status', 'Aborted');
+  }
+
+
   // check to make sure the loaded image is compatible with our device
   validateHexFile( blocks ) {
     return true;
@@ -372,7 +417,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     let me = this;
 
-    return me.command( BL_OP_DATA, me.space.sendFilter( index, block, me.space.addressing, me.space.dataOffset ), {timeout: me.space.dataTimeout,  maxRetries: 0 } )
+    return me.command( BL_OP_DATA, me.space.sendFilter( index, block, me.space.addressing, me.space.dataOffset ), {timeout: me.space.dataTimeout,  maxRetries: me.space.dataRetries } )
     .then( function( response ) {
       if( response[0] !== BL_OP_ACK ) {
         throw new Error('Unexpected response while writing data: ' + response[0] );
@@ -382,6 +427,9 @@ module.exports = class ModbusBootloader extends EventEmitter {
         me.emit( 'progress', 100 * (me.blocksCompleted/me.totalBlocks ) );
 
       }
+    })
+    .catch( function( err ){
+      throw err;
     });
   }
 
