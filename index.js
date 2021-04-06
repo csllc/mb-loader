@@ -462,14 +462,13 @@ module.exports = class ModbusBootloader extends EventEmitter {
       throw new Error('Dont know how to import File');
     }
 
-
     // load file into blocks according to desired block size
     return loader
       .then(function(blocks) {
 
         // if there is a filter to be applied while loading, do it
         if ('function' === typeof(me.space.loadFilter)) {
-          me.space.loadFilter(blocks);
+          me.space.loadFilter(blocks, me.space);
         }
 
         if (me.validateHexFile(blocks)) {
@@ -494,7 +493,6 @@ module.exports = class ModbusBootloader extends EventEmitter {
                 me.totalBlocks++;
                 me.flashBlocks.push(me.space.sendFilter(index, block, space.addressing, space.dataOffset));
 
-
               } else {
                 //console.log( 'Skipping empty block at ',start.toString(16));
               }
@@ -502,8 +500,6 @@ module.exports = class ModbusBootloader extends EventEmitter {
               //me.emit('status', 'Ignoring out-of-range data at ' + start.toString(16));
             }
           });
-
-
 
         } else {
           throw new Error('Hex file is not compatible with this device');
