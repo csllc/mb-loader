@@ -1,6 +1,6 @@
 {
   "name": "@csllc/mb-loader",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "Loader utility for MODBUS Bootloader",
   "main": "index.js",
   "scripts": {
