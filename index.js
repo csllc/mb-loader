@@ -257,12 +257,18 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
 
       me.connectToTarget()
+      .then(function(response) {
+        if (me.space.selectDelay) {
+          me.emit('status', 'Waiting for Reset');
+          return new Promise((resolve, reject) => {
+            setTimeout(() => { resolve(response); }, me.space.selectDelay);
+          });
+        }
+      })
         .then(function(response) {
-
           me.emit('status', 'Connected');
           me.emit('status', 'Selecting Memory');
           return me.command(BL_OP_SELECT, [config.space]);
-
         })
         .then(function(response) {
 
