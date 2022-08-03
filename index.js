@@ -61,7 +61,7 @@ const BL_PLAT_GENERIC = 0x20;
  */
 module.exports = class ModbusBootloader extends EventEmitter {
 
-  constructor(master) {
+  constructor(master, options) {
 
     super();
 
@@ -90,6 +90,8 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // the bootloader version of the target device
     me.targetVersion = [0, 0];
+    me.blVersion = '';  // the string version
+    me.blScalarVersion = 0;  // a scalar version that facilitates simple >,< comparison
 
     // a list of all our in-progress modbus transactions (Transaction objects)
     me.transactions = [];
@@ -97,12 +99,32 @@ module.exports = class ModbusBootloader extends EventEmitter {
     // the CRC we calculate, for the purposes of matching with the bootloader's
     // calculation
     me.computedCrc = null;
+
+    // are we in the process of aborting an unfinished load?
+    me.aborting = false;
+
+    // Are we in the process of loading target?
+    me.inProgress = false;
+
+    me.log = options.logger || { info: function(){}, error: function(){}, silly:function(){}};
   }
 
+  // access state variable
+  isAborting() {
+    return this.aborting;
+  }
+
+  // access state variable
+  isInProgress() {
+    return this.inProgress;
+  }
+
+  // remove the transaction from our list of active transactions
   removeTransaction(transaction) {
 
     let index = this.transactions.indexOf(transaction);
-    if (index > -1) {
+    //this.log.silly('removeTransaction', index);
+    if(index > -1) {
       this.transactions.splice(index, 1);
     }
   }
@@ -123,11 +145,11 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     let me = this;
 
-    if (data === null) {
+    if(data === null) {
       data = [];
     }
 
-    if (!Array.isArray(data)) {
+    if(!Array.isArray(data)) {
       options = data;
       data = [];
     }
@@ -140,22 +162,45 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     return new Promise(function(resolve, reject) {
 
-      options.onResponse = function(response) {
+      // options.onResponse = function(response) {
+      //   me.removeTransaction(this);
+      //   resolve(response.values);
+      // };
+      // options.onComplete = function(err) {
+      //   //console.log('oncomplete', this, this.shouldRetry() );
+      //   if(err && !this.shouldRetry()) {
+      //     me.removeTransaction(this);
+      //     reject(err);
+      //   }
+      // };
+
+      options.onDone = function(err, response) {
+        //console.log('onDone', err, response);
         me.removeTransaction(this);
-        resolve(response.values);
-      };
-      options.onComplete = function(err) {
-        //console.log('oncomplete', this, this.shouldRetry() );
-        if (err && !this.shouldRetry()) {
-          me.removeTransaction(this);
+        if(err) {
           reject(err);
+        } else if(response) {
+          resolve(response.values);
+        } else {
+          reject(new Error('Invalid command response'));
         }
       };
-      if (me.aborting) {
-        me.removeTransaction(this);
-        return reject('Aborted by user');
+
+      //options.onCancel = function() {
+        //me.log.info( 'MB-LOADER CANCEL');
+
+      //};
+
+      // If user has commanded an abort, don't send any commands
+      if(me.aborting) {
+        reject('Aborted by user');
       }
+      else {
+        // queue the command and save the transaction in case we need it
+        // later (for instance to cancel)
       me.transactions.push(me.master.command(op, Buffer.from(data), options));
+
+    }
 
     });
   }
@@ -171,53 +216,61 @@ module.exports = class ModbusBootloader extends EventEmitter {
     let me = this;
 
     return me.command(BL_OP_ENQUIRE, null, { timeout: me.target.target.enquireTimeout, maxRetries: me.target.target.enquireRetries })
-      .then(function(response) {
+    .then(function(response) {
 
-        if (response.length >= 4) {
-          // Response consists of
-          // product code, versionMajor, versionMinor, numberOfSpaces, max buffer(Msb,LSB)
-          me.blVersion = response[1] + '.' + response[2];
 
-          // save version for later use
-          me.targetVersion = [response[1], response[2]];
+      if(response.length >= 4) {
+        // Response consists of
+        // product code, versionMajor, versionMinor, numberOfSpaces, max buffer(Msb,LSB)
 
-          me.numberOfSpaces = response[3];
-          if (response.length > 5) {
-            me.maxBuffer = response[4] * 256 + response[5];
-          } else {
-            me.maxBuffer = 0;
-          }
+        // save version for later use
+        me.blVersion = response[1] + '.' + response[2];
+        me.blScalarVersion = response[1]*256  + response[2];
+        me.targetVersion = [response[1], response[2]];
 
-          // check for compatible bootloader version
-          if ([4, 3, 2].indexOf(response[1]) === -1) {
-            throw new Error('Unsupported bootloader version (' + me.blVersion + ')');
-          }
-
-          me.emit('status', 'Product Code: ' + response[0]);
-          me.emit('status', 'Bootloader Version: ' + me.blVersion);
-          me.emit('status', 'Max Buffer: ' + me.maxBuffer);
-
-          // check the connected device is compatible with what we are trying to load
-          //let check = me.target.isCompatible( response );
-          let check = true;
-
-          if (true !== check) {
-            throw new Error(check);
-          }
+        me.numberOfSpaces = response[3];
+        if(response.length > 5) {
+          me.maxBuffer = response[4] * 256 + response[5];
         } else {
+          me.maxBuffer = 0;
+        }
 
-          // we got an invalid response back. this could be incorrect wiring
-          // (loopback) or some other strange condition.  Try to ignore it
-          return me.connectToTarget();
+        // check for compatible bootloader version
+        if([4, 3, 2].indexOf(response[1]) === -1) {
+          throw new Error('Unsupported bootloader version (' + me.blVersion + ')');
         }
-      })
-      .catch(function(err) {
-        if (err.name === 'ResponseTimeoutError') {
-          throw new Error('No Response from Device');
-        } else {
-          throw err;
+
+        me.emit('status', 'Product Code: ' + response[0]);
+        me.emit('status', 'Bootloader Version: ' + me.blVersion);
+        me.emit('status', 'Max Buffer: ' + me.maxBuffer);
+
+        // check the connected device is compatible with what we are trying to load
+        //let check = me.target.isCompatible( response );
+        let check = true;
+
+        if(true !== check) {
+          throw new Error(check);
         }
-      });
+      } else {
+
+        // we got an invalid response back. this could be incorrect wiring
+        // (loopback) or some other strange condition.  Try to ignore it
+        //return me.connectToTarget();
+        // Glase 2022-08-01 I don't think just trying again infinitely is the
+        // right thing to do here.  It seems like throwing would be better,
+        // even though it means the user will see an error.  A scenario is that
+        // the user stopped and restarted the bootload operation quickly, and
+        // the embedded side was still doing something.
+        throw new Error('Invalid Response to ENQ');
+      }
+    })
+    .catch(function(err) {
+      if(err.name === 'ResponseTimeoutError') {
+        throw new Error('No Response from Device');
+      } else {
+        throw err;
+      }
+    });
   }
 
 
@@ -249,133 +302,140 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     return new Promise(function(resolve, reject) {
 
+      me.inProgress = true;
+
       // for keeping track of elapsed time
       let timer;
 
-
       me.emit('status', 'Checking Communication');
-
 
       me.connectToTarget()
       .then(function(response) {
-        if (me.space.selectDelay) {
+        if(me.space.selectDelay) {
           me.emit('status', 'Waiting for Reset');
           return new Promise((resolve, reject) => {
             setTimeout(() => { resolve(response); }, me.space.selectDelay);
           });
         }
       })
-        .then(function(response) {
-          me.emit('status', 'Connected');
-          me.emit('status', 'Selecting Memory');
-          return me.command(BL_OP_SELECT, [config.space]);
-        })
-        .then(function(response) {
+      .then(function(response) {
+        me.emit('status', 'Connected');
+        me.emit('status', 'Selecting Memory');
+        return me.command(BL_OP_SELECT, [config.space]);
+      })
+      .then(function(response) {
 
-          if (response.length > 5) {
-            // version 4 uses a differently formatted message
-            if (me.targetVersion[0] < 4) {
-              me.blockSize = response[0] * 256 + response[1];
-              me.appStart = (response[2] * 0x1000000 + response[3] * 0x10000 + response[4] * 0x100 + response[5]);
-              me.appEnd = (response[6] * 0x1000000 + response[7] * 0x10000 + response[8] * 0x100 + response[9]);
-            } else {
-              me.blockSize = response[0] * 256 + response[1];
-              let startBlock = response[2] * 0x100 + response[3];
-              let endBlock = response[4] * 0x100 + response[5];
-
-              me.appStart = startBlock * me.blockSize;
-              me.appEnd = endBlock * me.blockSize;
-            }
-
-            me.emit('status', 'Min Block Size: ' + me.blockSize);
-            me.emit('status', 'App Start: ' + me.appStart.toString(16));
-            me.emit('status', 'App End: ' + me.appEnd.toString(16));
-
-            return me.importFile(file);
+        if(response.length > 5) {
+          // version 4 uses a differently formatted message
+          if(me.targetVersion[0] < 4) {
+            me.blockSize = response[0] * 256 + response[1];
+            me.appStart = (response[2] * 0x1000000 + response[3] * 0x10000 + response[4] * 0x100 + response[5]);
+            me.appEnd = (response[6] * 0x1000000 + response[7] * 0x10000 + response[8] * 0x100 + response[9]);
           } else {
-            throw (new Error('Invalid response to Select'));
+            me.blockSize = response[0] * 256 + response[1];
+            let startBlock = response[2] * 0x100 + response[3];
+            let endBlock = response[4] * 0x100 + response[5];
+
+            me.appStart = startBlock * me.blockSize;
+            me.appEnd = endBlock * me.blockSize;
           }
-        })
-        .then(function() {
 
-          // import was successful (otherwise an exception would
-          // have been thrown and we wouldn't be here.)
+          me.emit('status', 'Min Block Size: ' + me.blockSize);
+          me.emit('status', 'App Start: ' + me.appStart.toString(16));
+          me.emit('status', 'App End: ' + me.appEnd.toString(16));
 
-          // send erase command
-          me.emit('status', 'Erasing');
+          return me.importFile(file);
+        } else {
+          throw (new Error('Invalid response to Select'));
+        }
+      })
+      .then(function() {
 
-          timer = process.hrtime();
+        // import was successful (otherwise an exception would
+        // have been thrown and we wouldn't be here.)
 
-          let action = me.command(BL_OP_ERASE, { timeout: me.space.eraseTimeout });
+        // send erase command
+        me.emit('status', 'Erasing');
 
-          return action;
+        timer = process.hrtime();
 
-        })
-        .then(function(response) {
+        let action = me.command(BL_OP_ERASE, { timeout: me.space.eraseTimeout });
 
-          if (BL_OP_ACK === response[0]) {
+        return action;
 
-            let elapsed = process.hrtime(timer);
-            let seconds = (elapsed[0] + (elapsed[1] / 1000000000)).toFixed(2);
+      })
+      .then(function(response) {
 
-            me.emit('status', 'Erase Complete (' + seconds + ' sec)');
-
-            // Send the data!
-            me.emit('status', 'Sending...');
-            timer = process.hrtime();
-
-            return me.sendBlocks();
-          } else {
-            throw new Error('Erase command was rejected by the device');
-          }
-        })
-        .then(function() {
+        if(BL_OP_ACK === response[0]) {
 
           let elapsed = process.hrtime(timer);
           let seconds = (elapsed[0] + (elapsed[1] / 1000000000)).toFixed(2);
 
-          me.emit('status', 'Programming Complete (' + seconds + ' sec)');
+          me.emit('status', 'Erase Complete (' + seconds + ' sec)');
 
-          me.emit('status', 'Validating..');
-
+          // Send the data!
+          me.emit('status', 'Sending...');
           timer = process.hrtime();
 
-          // End of transmission; request checksum
-          let action = me.command(BL_OP_VERIFY, { timeout: me.space.verifyTimeout });
+          return me.sendBlocks();
+        } else {
+          throw new Error('Erase command was rejected by the device');
+        }
+      })
+      .then(function() {
 
-          return action;
-        })
-        .then(function(response) {
+        let elapsed = process.hrtime(timer);
+        let seconds = (elapsed[0] + (elapsed[1] / 1000000000)).toFixed(2);
 
-          let checksum = (response[0] << 8) + response[1];
+        me.emit('status', 'Programming Complete (' + seconds + ' sec)');
 
-          let elapsed = process.hrtime(timer);
-          let seconds = (elapsed[0] + (elapsed[1] / 1000000000)).toFixed(2);
+        me.emit('status', 'Validating..');
 
-          me.emit('status', 'Checksum: ' + checksum.toString(16) + ' (' + seconds + ' sec)');
+        timer = process.hrtime();
 
-          if (me.computedCrc !== checksum) {
-            throw new Error('Incorrect Checksum: Received ' + checksum.toString(16) + ' but wanted ' + me.computedCrc.toString(16));
-          }
-          return me.command(BL_OP_FINISH, { timeout: me.space.finishTimeout });
-        })
-        .then(function(response) {
-          if (BL_OP_ACK === response[0]) {
+        // End of transmission; request checksum
+        let action = me.command(BL_OP_VERIFY, { timeout: me.space.verifyTimeout });
 
-            // reset the processor
-            //me.emit('status', 'Resetting');
-            //me.port.write( [BL_OP_RESET] );
+        return action;
+      })
+      .then(function(response) {
 
-            resolve();
-          } else {
-            throw new Error('FINISH Command failed');
-          }
+        let checksum = (response[0] << 8) + response[1];
+
+        let elapsed = process.hrtime(timer);
+        let seconds = (elapsed[0] + (elapsed[1] / 1000000000)).toFixed(2);
+
+        me.emit('status', 'Checksum: ' + checksum.toString(16) + ' (' + seconds + ' sec)');
+
+        if(me.computedCrc !== checksum) {
+          throw new Error('Incorrect Checksum: Received ' + checksum.toString(16) + ' but wanted ' + me.computedCrc.toString(16));
+        }
+        return me.command(BL_OP_FINISH, { timeout: me.space.finishTimeout });
+      })
+      .then(function(response) {
+        if(BL_OP_ACK === response[0]) {
+
+          // reset the processor
+          //me.emit('status', 'Resetting');
+          //me.port.write( [BL_OP_RESET] );
+
+          resolve();
+        } else {
+          throw new Error('FINISH Command failed');
+        }
 
 
-        })
-        .catch(function(err) {
-          reject(err);
-        });
+      })
+      .catch(function(err) {
+        // cancel any other transactions that are in progress
+        me.abort();
+        //console.log('mb-loader', err);
+        reject(err);
+      })
+      .finally(function() {
+        me.inProgress = false;
+        //console.log('mb-loader::start finished');
+      });
 
     });
 
@@ -385,18 +445,21 @@ module.exports = class ModbusBootloader extends EventEmitter {
   abort() {
     let me = this;
 
-    this.aborting = true;
+    if( !me.aborting ) {
+    me.aborting = true;
 
-    if (me.transactions.length > 0) {
-      for (let i = this.transactions.length - 1; i >= 0; i--) {
-        // me.transactions[i].reject();
-        // signal end of transaction to anyone waiting on it
-        // me.transactions[i].handleError( new Error('Aborted'));
-        // me.transactions[i].destroy();
+    me.log.info( 'MB_LOADER aborting ' + me.transactions.length );
+    if(me.transactions.length > 0) {
+
+      for(let i = me.transactions.length - 1; i >= 0; i--) {
+
+        me.transactions[i].cancel();
 
       }
 
-      me.transactions = [];
+      //me.transactions = [];
+
+    }
       me.emit('status', 'Aborted');
     }
   }
@@ -422,21 +485,32 @@ module.exports = class ModbusBootloader extends EventEmitter {
     // console.log('Send Block ' + index);
 
     return me.command(BL_OP_DATA, block, { timeout: me.space.dataTimeout, maxRetries: me.space.dataRetries })
-      .then(function(response) {
-        if (response[0] !== BL_OP_ACK) {
-          throw new Error('Unexpected response while writing data: ' + response[0]);
-        } else {
+    .then(function(response) {
+      if(response[0] !== BL_OP_ACK) {
+        throw new Error('Unexpected response while writing data: ' + response[0]);
+      } else {
 
-          // console.log('Block ' + me.blocksCompleted + ' complete', block);
+        // bytes 2 and 3 of the block are the address of the block.
+        // if the bootloader returned the address in its response, make sure
+        // it is the 'ACK' for the block we sent.  Otherwise we have gotten
+        // out of sync with the embedded side
+        if( me.blScalarVersion >= 0x0401 ) {
+          console.log('Block ' + me.blocksCompleted + ' complete', block, response[3],response[4]);
 
-          me.blocksCompleted++;
-          me.emit('progress', 100 * (me.blocksCompleted / me.totalBlocks));
-
+          if( block[2] !== response[3] || block[3] !== response[4] ) {
+            log.error('BLOCK OUT OF SEQUENCE');
+            throw new Error('Incorrect Block Acknowledgement');
+          }
         }
-      })
-      .catch(function(err) {
-        throw err;
-      });
+
+        me.blocksCompleted++;
+        me.emit('progress', 100 * (me.blocksCompleted / me.totalBlocks));
+
+      }
+    })
+    .catch(function(err) {
+      throw err;
+    });
   }
 
   /**
@@ -455,11 +529,11 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     const { Readable } = require('stream');
 
-    if (file instanceof Readable) {
+    if(file instanceof Readable) {
       // Read and check the HEX file
       me.emit('status', 'Loading File');
       loader = hex.loadStream(file, me.space.hexBlock);
-    } else if ('string' === typeof(file)) {
+    } else if('string' === typeof(file)) {
 
       me.emit('status', 'Loading File: ' + file);
       loader = hex.loadFile(file, me.space.hexBlock);
@@ -470,47 +544,47 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // load file into blocks according to desired block size
     return loader
-      .then(function(blocks) {
+    .then(function(blocks) {
 
-        // if there is a filter to be applied while loading, do it
-        if ('function' === typeof(me.space.loadFilter)) {
-          me.space.loadFilter(blocks, me.space);
-        }
+      // if there is a filter to be applied while loading, do it
+      if('function' === typeof(me.space.loadFilter)) {
+        me.space.loadFilter(blocks, me.space);
+      }
 
-        if (me.validateHexFile(blocks)) {
+      if(me.validateHexFile(blocks)) {
 
-          me.flashBlocks = [];
-          me.totalBlocks = 0;
+        me.flashBlocks = [];
+        me.totalBlocks = 0;
 
-          // determine the CRC of the entire application space
-          // do this before filtering for just non-empty blocks, so we get the
-          // correct answer
-          me.computedCrc = me.space.checksum(me.appStart - me.space.dataOffset, me.appEnd - me.space.dataOffset, me.space.hexBlock, blocks);
+        // determine the CRC of the entire application space
+        // do this before filtering for just non-empty blocks, so we get the
+        // correct answer
+        me.computedCrc = me.space.checksum(me.appStart - me.space.dataOffset, me.appEnd - me.space.dataOffset, me.space.hexBlock, blocks);
 
 
-          // Filter for blocks we need to send, and apply the send filter
-          blocks.forEach(function(block, index) {
+        // Filter for blocks we need to send, and apply the send filter
+        blocks.forEach(function(block, index) {
 
-            let start = index * space.hexBlock / space.addressing + space.dataOffset;
-            let end = ((index + 1) * space.hexBlock / space.addressing) - space.addressing + space.dataOffset;
+          let start = index * space.hexBlock / space.addressing + space.dataOffset;
+          let end = ((index + 1) * space.hexBlock / space.addressing) - space.addressing + space.dataOffset;
 
-            if (start >= me.appStart && end <= me.appEnd) {
-              if (!space.blockIsEmpty(block)) {
-                me.totalBlocks++;
-                me.flashBlocks.push(me.space.sendFilter(index, block, space.addressing, space.dataOffset));
+          if(start >= me.appStart && end <= me.appEnd) {
+            if(!space.skipEmptyBlocks || !space.blockIsEmpty(block)) {
+              me.totalBlocks++;
+              me.flashBlocks.push(me.space.sendFilter(index, block, space.addressing, space.dataOffset));
 
-              } else {
-                //console.log( 'Skipping empty block at ',start.toString(16));
-              }
             } else {
-              //me.emit('status', 'Ignoring out-of-range data at ' + start.toString(16));
+              //console.log( 'Skipping empty block at ',start.toString(16));
             }
-          });
+          } else {
+            //me.emit('status', 'Ignoring out-of-range data at ' + start.toString(16));
+          }
+        });
 
-        } else {
-          throw new Error('Hex file is not compatible with this device');
-        }
-      });
+      } else {
+        throw new Error('Hex file is not compatible with this device');
+      }
+    });
 
   }
 
@@ -519,7 +593,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
    *
    * @return     Promise  Resolves when all blocks have been sent
    */
-  sendBlocks() {
+  async sendBlocks() {
 
     let me = this;
     let space = me.space;
@@ -530,14 +604,14 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // for each block we have, create a Promise to send it.  Put
     // all the promises in the array.
-    me.flashBlocks.forEach(function(block, index) {
-      todo.push(me.sendAppBlock(index, block));
-    });
+    for( const [index, block] of me.flashBlocks.entries() ) {
+      await me.sendAppBlock(index, block);
+    }
 
     //console.log( 'block checksum: ', me.blockChecksum);
 
     // Return a promise that resolves when all Promises in the array are completed.
-    return Promise.all(todo);
+    //return Promise.all(todo);
   }
 
 

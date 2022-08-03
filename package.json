@@ -4,7 +4,7 @@
   "description": "Loader utility for MODBUS Bootloader",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha test/**/*.test.js"
   },
   "repository": {
     "type": "git",
@@ -20,12 +20,12 @@
   ],
   "homepage": "https://github.com/csllc/mb-loader#readme",
   "dependencies": {
-    "@csllc/cs-modbus": "^2.5.0"
+    "@csllc/cs-modbus": "^3.3.0"
   },
   "devDependencies": {
-    "can-usb-com": "^3.0.1",
-    "chalk": "^3.0.0",
-    "minimist": "^1.2.5",
-    "serialport": "^8.0.5"
+    "chai": "^4.3.6",
+    "chai-as-promised": "^7.1.1",
+    "mocha": "^10.0.0",
+    "sinon": "^14.0.0"
   }
 }

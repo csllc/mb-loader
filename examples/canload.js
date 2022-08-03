@@ -8,7 +8,7 @@
  * and allows a connection to a CANBUS network
  *
  * In order to run this example you need
- * npm install chalk minimist can-usb-com
+ * npm install chalk minimist can-usb-com serialport
  *
  *
  */
