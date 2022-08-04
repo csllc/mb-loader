@@ -106,7 +106,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
     // Are we in the process of loading target?
     me.inProgress = false;
 
-    me.log = options.logger || { info: function(){}, error: function(){}, silly:function(){}};
+    me.log = options.logger || { info: function(){}, error: function(){}, silly:function(){}, verbose:function(){} , warn:function(){} };
   }
 
   // access state variable
@@ -299,6 +299,8 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // default this for backward compatibility
     me.space.enquireRetries = me.space.enquireRetries || 100;
+
+    //me.log.verbose('mb-loader: start', JSON.stringify(me.target), JSON.stringify(me.space) );
 
     return new Promise(function(resolve, reject) {
 
@@ -495,7 +497,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
         // it is the 'ACK' for the block we sent.  Otherwise we have gotten
         // out of sync with the embedded side
         if( me.blScalarVersion >= 0x0401 ) {
-          console.log('Block ' + me.blocksCompleted + ' complete', block, response[3],response[4]);
+          //console.log('Block ' + me.blocksCompleted + ' complete', block, response[3],response[4]);
 
           if( block[2] !== response[3] || block[3] !== response[4] ) {
             log.error('BLOCK OUT OF SEQUENCE');

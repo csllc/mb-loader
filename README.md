@@ -81,6 +81,11 @@ Configuration of the communication path (master) is outside the scope of this do
 The first parameter of the .start() method is the HEX image to be loaded.  This parameter can be a file path (eg './my_hex_file.hex'), a string containing INTEL HEX-formatted data, or an instance of a Readable Stream (which is convenient if the HEX data is contained in a compressed file, network server, etc such that the Host software implements custom processing to obtain the HEX data).
 The HEX data will be read into memory, and chunked up into blocks according to the Target configuration.
 
+There are some sample HEX files in the test/files folder.  Hexmate (supplied with Microchip's MPLABX IDE) is a handy tool for generating hex files.  Example command line:
+
+Generate a 512 MB file (addresses 0-7FFFF), filled with 0x55
+`hexmate -FILL=0x55@0x0:0x1FFFFFFF  -O512MB.hex`
+
 ### Target configuration
 The second parameter of the .start() method tells mb-loader everything it needs to know about how to transfer the hex data to the device and its memory Spaces - for example, how large the transferred data chunks should be, how long the erase operation should take, how to compute a CRC for verification, and many other parameters.  For convenience, mb-loader contains several 'standard' memory space configurations that can be used as a basis for specifying the Target and Spaces.
 
