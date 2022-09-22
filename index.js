@@ -90,8 +90,8 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // the bootloader version of the target device
     me.targetVersion = [0, 0];
-    me.blVersion = '';  // the string version
-    me.blScalarVersion = 0;  // a scalar version that facilitates simple >,< comparison
+    me.blVersion = ''; // the string version
+    me.blScalarVersion = 0; // a scalar version that facilitates simple >,< comparison
 
     // a list of all our in-progress modbus transactions (Transaction objects)
     me.transactions = [];
@@ -106,7 +106,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
     // Are we in the process of loading target?
     me.inProgress = false;
 
-    me.log = options.logger || { info: function(){}, error: function(){}, silly:function(){}, verbose:function(){} , warn:function(){} };
+    me.log = options.logger || { info: function() {}, error: function() {}, silly: function() {}, verbose: function() {}, warn: function() {} };
   }
 
   // access state variable
@@ -187,20 +187,19 @@ module.exports = class ModbusBootloader extends EventEmitter {
       };
 
       //options.onCancel = function() {
-        //me.log.info( 'MB-LOADER CANCEL');
+      //me.log.info( 'MB-LOADER CANCEL');
 
       //};
 
       // If user has commanded an abort, don't send any commands
       if(me.aborting) {
         reject('Aborted by user');
-      }
-      else {
+      } else {
         // queue the command and save the transaction in case we need it
         // later (for instance to cancel)
-      me.transactions.push(me.master.command(op, Buffer.from(data), options));
+        me.transactions.push(me.master.command(op, Buffer.from(data), options));
 
-    }
+      }
 
     });
   }
@@ -225,7 +224,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
         // save version for later use
         me.blVersion = response[1] + '.' + response[2];
-        me.blScalarVersion = response[1]*256  + response[2];
+        me.blScalarVersion = response[1] * 256 + response[2];
         me.targetVersion = [response[1], response[2]];
 
         me.numberOfSpaces = response[3];
@@ -447,21 +446,21 @@ module.exports = class ModbusBootloader extends EventEmitter {
   abort() {
     let me = this;
 
-    if( !me.aborting ) {
-    me.aborting = true;
+    if(!me.aborting) {
+      me.aborting = true;
 
-    me.log.info( 'MB_LOADER aborting ' + me.transactions.length );
-    if(me.transactions.length > 0) {
+      me.log.info('MB_LOADER aborting ' + me.transactions.length);
+      if(me.transactions.length > 0) {
 
-      for(let i = me.transactions.length - 1; i >= 0; i--) {
+        for(let i = me.transactions.length - 1; i >= 0; i--) {
 
-        me.transactions[i].cancel();
+          me.transactions[i].cancel();
+
+        }
+
+        //me.transactions = [];
 
       }
-
-      //me.transactions = [];
-
-    }
       me.emit('status', 'Aborted');
     }
   }
@@ -496,11 +495,11 @@ module.exports = class ModbusBootloader extends EventEmitter {
         // if the bootloader returned the address in its response, make sure
         // it is the 'ACK' for the block we sent.  Otherwise we have gotten
         // out of sync with the embedded side
-        if( me.blScalarVersion >= 0x0401 ) {
+        if(me.blScalarVersion >= 0x0401 && response.length > 3) {
           //console.log('Block ' + me.blocksCompleted + ' complete', block, response[3],response[4]);
 
-          if( block[2] !== response[3] || block[3] !== response[4] ) {
-            log.error('BLOCK OUT OF SEQUENCE');
+          if(block[2] !== response[3] || block[3] !== response[4]) {
+            me.log.error('BLOCK OUT OF SEQUENCE');
             throw new Error('Incorrect Block Acknowledgement');
           }
         }
@@ -606,7 +605,7 @@ module.exports = class ModbusBootloader extends EventEmitter {
 
     // for each block we have, create a Promise to send it.  Put
     // all the promises in the array.
-    for( const [index, block] of me.flashBlocks.entries() ) {
+    for(const [index, block] of me.flashBlocks.entries()) {
       await me.sendAppBlock(index, block);
     }
 
